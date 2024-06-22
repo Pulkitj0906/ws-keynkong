@@ -45,7 +45,7 @@ io.on("connection", async (socket) => {
       const treeCollection = client.db("jungles").collection("trees");
       const treeExists = await treeCollection.findOne({ treeId: treeId });
       if (treeExists && Object.keys(treeExists).length >= 4) {
-        socket.emit("Noti", "Room is full");
+        socket.emit("Noti");
       } else {
         socket.join(treeId);
         if (!treeExists) {
@@ -85,8 +85,26 @@ io.on("connection", async (socket) => {
     }
   })
 
-  socket.on("disconnect", () => {
-    console.log(socket.username, "disconnected from the server");
+  socket.on("disconnect", async () => {
+    const monkeyCollection = client.db('jungles').collection('monkeys')
+    await monkeyCollection.deleteOne({name: socket.username})
+    //deleting from the tree on disconnection
+    const treeCollection = client.db('jungles').collection('trees')
+    const tree = await treeCollection.findOne({$or:[{'monkey1': socket.username}, {'monkey2': socket.username}]})
+    console.log(`${socket.username} left the jungle`)
+    if(tree && Object.keys(tree).length === 4) {
+      const isMonkey1 = (socket.username === tree.monkey1)
+      if(!isMonkey1) {
+        await treeCollection.updateOne({monkey2: socket.username}, {$unset: {monkey2: ""}})
+      }
+      else {
+        await treeCollection.updateOne({monkey1: socket.username}, {$set:{monkey1: tree.monkey2}, $unset: {monkey2: ""}})
+      }
+      socket.to(tree.treeId).emit('userLeft')
+    }
+    else if(tree && Object.keys(tree).length === 3) {
+      await treeCollection.deleteOne({'monkey1': socket.username})
+    }
   });
 });
 
